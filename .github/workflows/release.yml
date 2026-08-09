@@ -24,8 +24,9 @@ jobs:
             artifact: lansync-linux-x64
           - os: macos-latest
             artifact: lansync-macos-arm64
-          - os: macos-13 # последний раннер на Intel
-            artifact: lansync-macos-x64
+          # Сборки под Intel-маки нет: раннер macos-13 выведен из эксплуатации,
+          # а пришедшие ему на смену метки macos-*-intel относятся к платным
+          # «larger runners» и не входят в бесплатные минуты публичных репозиториев.
 
     runs-on: ${{ matrix.os }}
 
@@ -82,8 +83,10 @@ jobs:
             |---|---|
             | Windows | `lansync-windows-x64.exe` |
             | macOS (Apple Silicon) | `lansync-macos-arm64` |
-            | macOS (Intel) | `lansync-macos-x64` |
             | Linux | `lansync-linux-x64` |
+
+            Готового файла для Intel-маков нет — соберите его сами:
+            `npm ci && npm run build:binary`.
 
             **macOS и Linux:** после скачивания разрешите запуск —
             `chmod +x lansync-*`. На macOS файл не подписан сертификатом Apple,
