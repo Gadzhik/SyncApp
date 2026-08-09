@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 430" width="900" height="430" role="img" aria-label="Схема работы LanSync: сервис на компьютере, телефон подключается по QR-коду в локальной сети">
+  <title>Как работает LanSync</title>
+
+  <style>
+    /* Цвета подобраны так, чтобы читаться и на светлой, и на тёмной теме GitHub */
+    .bg { fill: #1b1f27; }
+    .card { fill: #232833; stroke: #39404f; stroke-width: 1.5; }
+    .accent { fill: #5b8dff; }
+    .accent-soft { fill: #2f3f6b; }
+    .t { fill: #e7e9ee; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .t-dim { fill: #98a0af; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .h { font-size: 17px; font-weight: 600; }
+    .b { font-size: 13.5px; }
+    .s { font-size: 12px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+    .wire { stroke: #5b8dff; stroke-width: 2; fill: none; }
+    .chip { fill: #262c38; stroke: #39404f; stroke-width: 1; }
+  </style>
+
+  <rect class="bg" width="900" height="430" rx="14" />
+
+  <!-- заголовок -->
+  <g transform="translate(32 34)">
+    <rect class="accent" width="26" height="26" rx="6" />
+    <g fill="none" stroke="#1b1f27" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M7 11h11l-3.2-3.2" />
+      <path d="M19 16H8l3.2 3.2" />
+    </g>
+    <text class="t h" x="38" y="13">LanSync</text>
+    <text class="t-dim b" x="38" y="31">обмен файлами и текстом по локальной сети — без облака и без интернета</text>
+  </g>
+
+  <!-- компьютер -->
+  <g transform="translate(32 108)">
+    <rect class="card" width="330" height="196" rx="12" />
+    <text class="t h" x="20" y="32" font-size="15">Компьютер</text>
+    <text class="t-dim s" x="20" y="52">один файл, запуск двойным кликом</text>
+
+    <g transform="translate(20 70)">
+      <rect class="chip" width="290" height="30" rx="7" />
+      <text class="t b" x="12" y="20">📁 каталог обмена</text>
+    </g>
+    <g transform="translate(20 106)">
+      <rect class="chip" width="290" height="30" rx="7" />
+      <text class="t b" x="12" y="20">📋 буфер обмена системы</text>
+    </g>
+    <g transform="translate(20 142)">
+      <rect class="chip" width="290" height="30" rx="7" />
+      <text class="t b" x="12" y="20">🔒 HTTPS, сертификат создаётся сам</text>
+    </g>
+  </g>
+
+  <!-- сеть -->
+  <g transform="translate(378 108)">
+    <text class="t-dim s" x="72" y="16" text-anchor="middle">локальная сеть</text>
+
+    <!-- две стрелки в обе стороны -->
+    <path class="wire" d="M4 62 H128" marker-end="url(#arrow)" />
+    <path class="wire" d="M140 96 H16" marker-end="url(#arrow)" />
+
+    <text class="t-dim s" x="72" y="52" text-anchor="middle">файлы · текст</text>
+    <text class="t-dim s" x="72" y="120" text-anchor="middle">в обе стороны</text>
+
+    <text class="t-dim s" x="72" y="168" text-anchor="middle">данные не покидают</text>
+    <text class="t-dim s" x="72" y="184" text-anchor="middle">вашу сеть</text>
+  </g>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#5b8dff" />
+    </marker>
+  </defs>
+
+  <!-- телефон -->
+  <g transform="translate(556 108)">
+    <rect class="card" width="312" height="196" rx="12" />
+    <text class="t h" x="20" y="32" font-size="15">Телефон</text>
+    <text class="t-dim s" x="20" y="52">открывает страницу, ничего не устанавливая</text>
+
+    <!-- условный QR -->
+    <g transform="translate(20 68)">
+      <rect fill="#e7e9ee" width="58" height="58" rx="6" />
+      <g fill="#1b1f27">
+        <rect x="7" y="7" width="15" height="15" />
+        <rect x="36" y="7" width="15" height="15" />
+        <rect x="7" y="36" width="15" height="15" />
+        <rect x="27" y="27" width="6" height="6" />
+        <rect x="38" y="33" width="6" height="6" />
+        <rect x="33" y="44" width="6" height="6" />
+        <rect x="44" y="44" width="7" height="7" />
+      </g>
+    </g>
+    <text class="t b" x="92" y="90">наведите камеру на QR-код</text>
+    <text class="t-dim s" x="92" y="110">ссылка уже содержит токен доступа</text>
+    <text class="t-dim s" x="92" y="128">повторно вводить ничего не нужно</text>
+
+    <g transform="translate(20 142)">
+      <rect class="chip" width="272" height="30" rx="7" />
+      <text class="t b" x="12" y="20">📲 «Поделиться → LanSync» на Android</text>
+    </g>
+  </g>
+
+  <!-- возможности -->
+  <g transform="translate(32 326)">
+    <text class="t-dim s" y="0">Что умеет</text>
+    <g transform="translate(0 12)">
+      <rect class="chip" width="158" height="30" rx="15" />
+      <text class="t b" x="16" y="20">файлы любого размера</text>
+    </g>
+    <g transform="translate(168 12)">
+      <rect class="chip" width="132" height="30" rx="15" />
+      <text class="t b" x="16" y="20">скачать архивом</text>
+    </g>
+    <g transform="translate(310 12)">
+      <rect class="chip" width="150" height="30" rx="15" />
+      <text class="t b" x="16" y="20">превью изображений</text>
+    </g>
+    <g transform="translate(470 12)">
+      <rect class="chip" width="128" height="30" rx="15" />
+      <text class="t b" x="16" y="20">буфер обмена</text>
+    </g>
+    <g transform="translate(608 12)">
+      <rect class="chip" width="118" height="30" rx="15" />
+      <text class="t b" x="16" y="20">автоочистка</text>
+    </g>
+    <g transform="translate(736 12)">
+      <rect class="chip" width="132" height="30" rx="15" />
+      <text class="t b" x="16" y="20">список устройств</text>
+    </g>
+  </g>
+</svg>

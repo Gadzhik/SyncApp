@@ -1,0 +1,20 @@
+node_modules/
+dist/
+dist-bin/
+build/
+*.log
+.DS_Store
+
+# Локальные переопределения настроек Claude Code; общие лежат в .claude/settings.json
+.claude/settings.local.json
+.claude/sessions.log
+
+# Разовый промпт для передачи работы на другую машину — не часть проекта
+HANDOFF.md
+
+# Исходные записи экрана: сотни мегабайт, GitHub отклоняет файлы больше 100 МБ.
+# Правила действуют только на корень — сжатые версии в docs/media/ коммитятся.
+/*.mp4
+/*.mkv
+/*.mov
+/*.webm

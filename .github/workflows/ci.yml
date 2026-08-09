@@ -1,0 +1,100 @@
+name: Проверки
+
+# Гоняется на каждый push и pull request. Сборка релиза (release.yml) запускается
+# только по тегу, поэтому без этого workflow поломка обнаруживалась бы лишь при выпуске.
+
+on:
+  # Указан только branches — значит, на push тега workflow не сработает.
+  # По тегам работает release.yml, дублировать проверки незачем.
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Тесты (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Установка зависимостей
+        run: npm ci
+
+      - name: Проверка типов
+        run: npm run build
+
+      - name: Тесты
+        run: npm test
+
+      - name: Синтаксис клиента
+        shell: bash
+        run: |
+          for f in src/web/app.js src/web/api.js src/web/sw.js; do
+            node --check "$f"
+          done
+
+      # Страница молча ломается, если селектор не находит элемент, а тесты API
+      # этого не видят. Проверка дешёвая, а класс ошибок закрывает целиком.
+      - name: Селекторы клиента находят элементы разметки
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            const html = fs.readFileSync("src/web/index.html", "utf8");
+            const js = fs.readFileSync("src/web/app.js", "utf8");
+            const ids = new Set([...html.matchAll(/id="([^"]+)"/g)].map((m) => m[1]));
+            const used = [...new Set([...js.matchAll(/\$\(.#([^"\x27]+).\)/g)].map((m) => m[1]))];
+            const missing = used.filter((id) => !ids.has(id));
+            if (missing.length) {
+              console.error("Нет в разметке: " + missing.join(", "));
+              process.exit(1);
+            }
+            console.log("OK: селекторов " + used.length);
+          '
+
+  # Сборка проверяется здесь же: ломается она обычно от смены зависимостей,
+  # и узнавать об этом в момент выпуска релиза поздно.
+  build:
+    name: Сборка бинарника (${{ matrix.os }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Сборка исполняемого файла
+        run: npm run build:binary
+
+      - name: Файл запускается и отвечает
+        shell: bash
+        run: |
+          binary=$(ls dist-bin/lansync-*)
+          echo "собрано: $binary"
+          chmod +x "$binary" || true
+          version=$("$binary" --version)
+          echo "версия: $version"
+          test -n "$version"

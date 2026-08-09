@@ -1,0 +1,93 @@
+name: Сборка исполняемых файлов
+
+# Каждая платформа собирается на своей системе. Кросс-сборка технически возможна,
+# но для macOS требует переподписи бинарника средствами самой macOS (codesign) —
+# без неё Gatekeeper не даст запустить файл.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: lansync-windows-x64.exe
+          - os: ubuntu-latest
+            artifact: lansync-linux-x64
+          - os: macos-latest
+            artifact: lansync-macos-arm64
+          - os: macos-13 # последний раннер на Intel
+            artifact: lansync-macos-x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Установка зависимостей
+        run: npm ci
+
+      - name: Проверка типов и тесты
+        run: |
+          npm run build
+          npm test
+
+      - name: Сборка исполняемого файла
+        run: npm run build:binary
+
+      - name: Проверка, что файл запускается
+        run: |
+          ls -la dist-bin/
+          ./dist-bin/${{ matrix.artifact }} --version
+        shell: bash
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist-bin/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Публикация
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          body: |
+            Скачайте файл для своей системы и запустите — Node.js не нужен.
+
+            | Система | Файл |
+            |---|---|
+            | Windows | `lansync-windows-x64.exe` |
+            | macOS (Apple Silicon) | `lansync-macos-arm64` |
+            | macOS (Intel) | `lansync-macos-x64` |
+            | Linux | `lansync-linux-x64` |
+
+            **macOS и Linux:** после скачивания разрешите запуск —
+            `chmod +x lansync-*`. На macOS файл не подписан сертификатом Apple,
+            поэтому снимите карантин: `xattr -dr com.apple.quarantine lansync-macos-*`.
+
+            **Windows:** при первом запуске разрешите входящие подключения —
+            `lansync-windows-x64.exe --allow-firewall`.

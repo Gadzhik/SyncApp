@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f1115" />
+    <title>LanSync</title>
+    <link rel="icon" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <img src="/icon.svg" alt="" width="24" height="24" />
+        <span>LanSync</span>
+      </div>
+      <div class="conn">
+        <span id="device-name" class="device"></span>
+        <span id="conn-dot" class="dot" title="соединение"></span>
+        <button id="disconnect" class="btn btn-sm" hidden>Отключиться</button>
+      </div>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab is-active" data-tab="files" role="tab">Файлы</button>
+      <button class="tab" data-tab="text" role="tab">Текст</button>
+    </nav>
+
+    <main>
+      <section id="panel-files" class="panel">
+        <div id="dropzone" class="dropzone">
+          <input id="file-input" type="file" multiple hidden />
+          <button id="pick-files" class="btn btn-primary">Выбрать файлы</button>
+          <p class="hint">или перетащите файлы сюда</p>
+        </div>
+
+        <ul id="uploads" class="uploads"></ul>
+
+        <div class="list-head">
+          <h2>Файлы на ПК</h2>
+          <span id="files-count" class="muted"></span>
+        </div>
+
+        <div id="files-toolbar" class="toolbar" hidden>
+          <label class="check">
+            <input id="select-all" type="checkbox" />
+            <span>Выбрать всё</span>
+          </label>
+          <span id="selection-info" class="muted"></span>
+          <span class="spacer"></span>
+          <button id="download-zip" class="btn btn-sm">Скачать архивом</button>
+          <button id="delete-selected" class="btn btn-sm btn-danger" hidden>Удалить выбранные</button>
+        </div>
+
+        <ul id="files" class="list"></ul>
+        <p id="files-empty" class="empty" hidden>Пока пусто. Отправьте первый файл.</p>
+      </section>
+
+      <section id="panel-text" class="panel" hidden>
+        <div class="composer">
+          <textarea
+            id="clip-input"
+            rows="4"
+            placeholder="Текст, ссылка, код — что угодно"
+            enterkeyhint="send"
+          ></textarea>
+          <button id="clip-send" class="btn btn-primary">Отправить</button>
+        </div>
+
+        <div class="list-head">
+          <h2>История</h2>
+          <span id="clips-count" class="muted"></span>
+        </div>
+        <ul id="clips" class="list"></ul>
+        <p id="clips-empty" class="empty" hidden>Пока пусто. Отправьте первую запись.</p>
+      </section>
+
+      <section id="devices" class="block" hidden>
+        <div class="list-head">
+          <h2>Устройства</h2>
+          <span id="devices-count" class="muted"></span>
+        </div>
+        <ul id="devices-list" class="list"></ul>
+        <p id="devices-empty" class="empty" hidden>Ни одно устройство ещё не подключалось.</p>
+      </section>
+
+      <section id="connect" class="connect" hidden>
+        <h2>Подключить телефон</h2>
+        <p class="muted">Отсканируйте код камерой — ссылка уже содержит токен доступа.</p>
+        <div id="connect-qr" class="qr"></div>
+        <code id="connect-url" class="url"></code>
+        <p id="cert-note" class="muted" hidden>
+          Соединение защищено самоподписанным сертификатом: при первом заходе телефон покажет
+          предупреждение. Нужно один раз выбрать «Дополнительно» → «Перейти на сайт».
+        </p>
+        <button id="rotate-token" class="btn btn-sm btn-danger">Отключить все устройства</button>
+        <p class="muted">
+          Сменит токен и отвяжет все подключённые устройства. Чтобы вернуть их, отсканируйте
+          новый код заново.
+        </p>
+        <p id="cleanup-note" class="muted"></p>
+      </section>
+
+      <section id="control" class="block" hidden>
+        <div class="list-head"><h2>Этот компьютер</h2></div>
+        <div class="card">
+          <label class="check">
+            <input id="autostart" type="checkbox" />
+            <span>Запускать вместе с Windows</span>
+          </label>
+          <p id="autostart-note" class="muted">
+            Приложение будет стартовать само и скрыто, без окна консоли.
+          </p>
+          <div class="card-actions">
+            <button id="shutdown" class="btn btn-sm btn-danger">Выключить LanSync</button>
+          </div>
+          <p class="muted">
+            Обмен станет недоступен, пока приложение не запустят снова. Запустить — двойным
+            кликом по файлу LanSync.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <div id="token-gate" class="gate" hidden>
+      <div class="gate-card">
+        <h2>Нужен токен доступа</h2>
+        <p class="muted">
+          Откройте страницу по QR-коду с компьютера — он подставит токен сам. Либо введите его
+          вручную: токен показан в окне программы на ПК.
+        </p>
+        <input id="token-input" type="text" placeholder="токен" autocomplete="off" spellcheck="false" />
+        <button id="token-save" class="btn btn-primary">Подключиться</button>
+        <p id="token-error" class="error" hidden>Токен не подошёл.</p>
+      </div>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
