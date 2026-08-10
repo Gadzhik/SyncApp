@@ -9,7 +9,7 @@ import { startClipboardWatcher, type ClipboardWatcher } from './clipboard.js'
 import { rotateToken, type Config } from './config.js'
 import { DeviceStore } from './devices.js'
 import { EventHub } from './events.js'
-import { connectUrl, lanAddresses, primaryAddress } from './network.js'
+import { connectUrl, isOwnAddress, lanAddresses, primaryAddress } from './network.js'
 import { archiveRoutes } from './routes/archive.js'
 import { clipsRoutes } from './routes/clips.js'
 import { devicesRoutes } from './routes/devices.js'
@@ -53,6 +53,27 @@ export async function buildApp(config: Config, hooks: AppHooks = {}): Promise<Ap
     if (!needsAuth(request.url)) return
     if (authorize(request, config, devices).ok) return
     return reply.code(401).send({ error: 'нужен токен доступа' })
+  })
+
+  /*
+   * Страница, открытая на самом ПК по сетевому адресу машины, упиралась в запрос токена:
+   * по адресу источника такой запрос неотличим от телефона, а токен лежит только в ссылке
+   * из QR-кода. В стартовом выводе рядом стоят «На этом ПК» и «В сети», и вторую строку
+   * копируют чаще. Отправляем на localhost — там доступ даётся по адресу.
+   *
+   * Ссылку с токеном не трогаем: по ней страницу открывают на ПК нарочно, чтобы посмотреть,
+   * что видит телефон. Границу доступа это не двигает — `authorize` по-прежнему признаёт
+   * своими только loopback-адреса.
+   */
+  app.addHook('onRequest', async (request, reply) => {
+    if (request.method !== 'GET') return
+    const [path, query] = request.url.split('?')
+    if (path !== '/' && path !== '/index.html') return
+    if (new URLSearchParams(query ?? '').has('t')) return
+    if (!isOwnAddress(request.ip)) return
+    // Порт берём из запроса, а не из конфигурации: так переживает и нестандартный порт.
+    const port = /:\d+$/.exec(request.headers.host ?? '')?.[0] ?? ''
+    return reply.redirect(`${https ? 'https' : 'http'}://localhost${port}${request.url}`, 302)
   })
 
   /*

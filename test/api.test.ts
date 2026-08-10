@@ -8,6 +8,7 @@ import { buildApp, type App } from '../src/server/app.ts'
 import { startCleanup } from '../src/server/cleanup.ts'
 import { loadConfig } from '../src/server/config.ts'
 import { EventHub } from '../src/server/events.ts'
+import { lanAddresses } from '../src/server/network.ts'
 import { sanitizeName } from '../src/server/store/files.ts'
 
 const sha256 = (data: Uint8Array): string => createHash('sha256').update(data).digest('hex')
@@ -412,6 +413,26 @@ describe('LanSync API', () => {
     const response = await fetch(`${base}/`)
     assert.equal(response.status, 200)
     assert.match(await response.text(), /LanSync/)
+  })
+
+  it('со своего же сетевого адреса уводит страницу на localhost', async (t) => {
+    const own = lanAddresses()[0]?.address
+    // На машине без сети (или в контейнере с одним loopback) проверять нечего
+    if (!own) return t.skip('у машины нет сетевого адреса')
+
+    const headers = { host: `${own}:8420` }
+    const response = await app.server.inject({ method: 'GET', url: '/', remoteAddress: own, headers })
+    assert.equal(response.statusCode, 302)
+    assert.equal(response.headers.location, 'http://localhost:8420/')
+
+    // Ссылку из QR-кода не перехватываем: по ней страницу открывают нарочно
+    const withToken = await app.server.inject({
+      method: 'GET',
+      url: `/?t=${token}`,
+      remoteAddress: own,
+      headers,
+    })
+    assert.equal(withToken.statusCode, 200)
   })
 })
 

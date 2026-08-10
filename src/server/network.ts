@@ -38,6 +38,23 @@ export function lanAddresses(): LanAddress[] {
 }
 
 /**
+ * Адрес принадлежит одному из интерфейсов самой машины. Берём их напрямую, а не через
+ * `lanAddresses`: там адреса отобраны для телефона (без виртуальных адаптеров и APIPA),
+ * а здесь важен любой адрес, с которого может прийти запрос с этого же компьютера.
+ */
+export function isOwnAddress(ip: string): boolean {
+  // IPv4 в IPv6-обёртке (::ffff:10.0.0.5) и ссылочный адрес с зоной (fe80::1%wlan0)
+  const clean = (ip.startsWith('::ffff:') ? ip.slice(7) : ip).split('%')[0]
+  if (!clean) return false
+  for (const addresses of Object.values(networkInterfaces())) {
+    for (const addr of addresses ?? []) {
+      if (!addr.internal && addr.address === clean) return true
+    }
+  }
+  return false
+}
+
+/**
  * Адрес интерфейса, через который система реально выходит в сеть. UDP-сокет
  * ничего не отправляет: connect лишь заставляет ядро выбрать маршрут, после чего
  * локальный адрес сокета и есть нужный. Это надёжнее любой эвристики по именам,
