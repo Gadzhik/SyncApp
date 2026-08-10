@@ -38,6 +38,19 @@ const el = {
   devicesList: $('#devices-list'),
   devicesCount: $('#devices-count'),
   devicesEmpty: $('#devices-empty'),
+  sendTo: $('#send-to'),
+  peers: $('#peers'),
+  peersList: $('#peers-list'),
+  peersCount: $('#peers-count'),
+  peersEmpty: $('#peers-empty'),
+  peerTransfers: $('#peer-transfers'),
+  peerCode: $('#peer-code'),
+  peerCodeShow: $('#peer-code-show'),
+  peerCodeHide: $('#peer-code-hide'),
+  peerHost: $('#peer-host'),
+  peerPort: $('#peer-port'),
+  peerCodeInput: $('#peer-code-input'),
+  peerAdd: $('#peer-add'),
   connect: $('#connect'),
   connectQr: $('#connect-qr'),
   connectUrl: $('#connect-url'),
@@ -152,7 +165,22 @@ async function copyText(text) {
 
 // --- состояние и отрисовка ----------------------------------------------
 
-const state = { files: [], clips: [], devices: [], info: {}, selected: new Set() }
+const state = {
+  files: [],
+  clips: [],
+  devices: [],
+  info: {},
+  selected: new Set(),
+  /** Соседние компьютеры: и привязанные, и просто найденные в сети. */
+  peers: [],
+  /** Передачи соседям — идущие и недавно завершённые. */
+  transfers: [],
+  /** Свой код привязки, пока он показан. */
+  peerCode: null,
+}
+
+/** Соседи, которым можно отправлять: привязанные и с неизменившимся сертификатом. */
+const readyPeers = () => state.peers.filter((peer) => peer.paired && !peer.changedFingerprint)
 
 const PREVIEWABLE = /\.(png|jpe?g|gif|webp|svg|mp4|mov|webm|mp3|m4a|wav|pdf|txt|md)$/i
 const VIDEO = /\.(mp4|mov|webm|mkv|avi)$/i
@@ -259,6 +287,14 @@ function renderSelection() {
   el.downloadZip.textContent = count ? `Скачать выбранное (${count})` : 'Скачать всё архивом'
   el.selectAll.checked = count > 0 && count === state.files.length
   el.selectAll.indeterminate = count > 0 && count < state.files.length
+
+  // Отправка соседу — рядом со скачиванием и удалением: это действие над той же выборкой.
+  el.sendTo.replaceChildren()
+  if (count > 0) {
+    for (const peer of readyPeers()) {
+      el.sendTo.append(button(`→ ${peer.name}`, '', () => void sendSelectionTo(peer)))
+    }
+  }
 }
 
 function renderClips() {
@@ -300,6 +336,11 @@ function renderClips() {
         }
       }),
     )
+
+    // Та же запись — соседнему компьютеру. У него она появится в истории и в буфере.
+    for (const peer of readyPeers()) {
+      actions.append(button(`→ ${peer.name}`, '', () => void sendClipTo(peer, clip.text)))
+    }
 
     item.append(text, meta, actions)
     el.clips.append(item)
@@ -356,7 +397,197 @@ function renderDevices() {
   }
 }
 
+// --- соседние компьютеры -------------------------------------------------
+
+async function sendSelectionTo(peer) {
+  const ids = [...state.selected]
+  if (ids.length === 0) return
+  try {
+    await api(`/api/peers/${peer.id}/send`, { method: 'POST', body: JSON.stringify({ ids }) })
+    toast(`Отправляю на «${peer.name}»`)
+  } catch (error) {
+    toast(error.message)
+  }
+}
+
+async function sendClipTo(peer, text) {
+  try {
+    await api(`/api/peers/${peer.id}/clip`, { method: 'POST', body: JSON.stringify({ text }) })
+    toast(`Отправлено на «${peer.name}»`)
+  } catch (error) {
+    toast(error.message)
+  }
+}
+
+async function pairPeer(host, port, code) {
+  try {
+    const result = await api('/api/peers/pair', {
+      method: 'POST',
+      body: JSON.stringify({ host, port: Number(port) || undefined, code }),
+    })
+    toast(`Привязан «${result.peer.name}»`)
+    return true
+  } catch (error) {
+    toast(error.message)
+    return false
+  }
+}
+
+function renderTransfers() {
+  el.peerTransfers.replaceChildren()
+
+  for (const transfer of state.transfers) {
+    const item = document.createElement('li')
+    item.className = `upload ${transfer.status === 'error' ? 'is-failed' : ''}`.trim()
+
+    const row = document.createElement('div')
+    row.className = 'upload-row'
+    const name = document.createElement('span')
+    name.className = 'upload-name'
+    name.textContent = `${transfer.name} → ${transfer.peerName}`
+    const status = document.createElement('span')
+    status.className = 'muted'
+    const percent = transfer.size ? Math.round((transfer.sent / transfer.size) * 100) : 0
+    status.textContent =
+      transfer.status === 'queued' ? `${formatSize(transfer.size)} · в очереди`
+      : transfer.status === 'sending' ? `${percent}% из ${formatSize(transfer.size)}`
+      : transfer.status === 'done' ? 'доставлено'
+      : transfer.status === 'cancelled' ? 'отменено'
+      : (transfer.error ?? 'ошибка')
+    row.append(name, status)
+
+    const bar = document.createElement('div')
+    bar.className = 'bar'
+    const fill = document.createElement('i')
+    fill.style.width = `${transfer.status === 'done' ? 100 : percent}%`
+    bar.append(fill)
+
+    item.append(row, bar)
+
+    if (transfer.status === 'queued' || transfer.status === 'sending') {
+      const actions = document.createElement('div')
+      actions.className = 'card-actions'
+      actions.append(
+        button('Отменить', 'btn-danger', async () => {
+          try {
+            await api(`/api/peers/transfers/${transfer.id}`, { method: 'DELETE' })
+          } catch (error) {
+            toast(error.message)
+          }
+        }),
+      )
+      item.append(actions)
+    }
+
+    el.peerTransfers.append(item)
+  }
+}
+
+function renderPeers() {
+  el.peersList.replaceChildren()
+  const paired = state.peers.filter((peer) => peer.paired).length
+  el.peersCount.textContent =
+    state.peers.length ? `найдено ${state.peers.length}${paired ? `, привязано ${paired}` : ''}` : ''
+  el.peersEmpty.hidden = state.peers.length > 0
+
+  el.peerCode.hidden = !state.peerCode
+  el.peerCode.textContent = state.peerCode ? state.peerCode.code : ''
+  el.peerCodeShow.hidden = Boolean(state.peerCode)
+  el.peerCodeHide.hidden = !state.peerCode
+
+  for (const peer of state.peers) {
+    const item = document.createElement('li')
+    item.className = 'card'
+
+    const row = document.createElement('div')
+    row.className = 'card-row'
+    const dot = document.createElement('span')
+    dot.className = `dot ${peer.online ? 'online' : ''}`
+    const main = document.createElement('div')
+    main.className = 'card-main'
+    const title = document.createElement('div')
+    title.className = 'card-title'
+    title.textContent = peer.name
+    const meta = document.createElement('div')
+    meta.className = 'card-meta'
+    meta.textContent =
+      peer.changedFingerprint ? `${peer.host}:${peer.port} · сертификат изменился`
+      : peer.paired ? `${peer.host}:${peer.port} · привязан${peer.online ? ', в сети' : ''}`
+      : `${peer.host}:${peer.port} · не привязан`
+    main.append(title, meta)
+    row.append(dot, main)
+    item.append(row)
+
+    const actions = document.createElement('div')
+    actions.className = 'card-actions'
+
+    if (!peer.paired) {
+      actions.append(
+        button('Привязать', 'btn-primary', async () => {
+          const code = prompt(`Код с экрана «${peer.name}» — там нажмите «Показать код»`)
+          if (!code) return
+          if (await pairPeer(peer.host, peer.port, code.trim())) await refreshPeers()
+        }),
+      )
+    } else {
+      if (peer.changedFingerprint) {
+        /*
+         * Сертификат соседа перевыпускается сам при смене его адресов, но отличить это
+         * от подмены нельзя — поэтому решает человек, а до тех пор отправка закрыта.
+         */
+        actions.append(
+          button('Это точно он — принять', 'btn-danger', async () => {
+            if (!confirm(`Принять новый сертификат «${peer.name}»? Убедитесь, что это тот же компьютер.`)) return
+            try {
+              await api(`/api/peers/${peer.id}/trust`, { method: 'POST' })
+              await refreshPeers()
+            } catch (error) {
+              toast(error.message)
+            }
+          }),
+        )
+      } else if (state.selected.size > 0) {
+        actions.append(
+          button(`Отправить выбранное (${state.selected.size})`, '', () => void sendSelectionTo(peer)),
+        )
+      }
+      actions.append(
+        button('Забыть', 'btn-danger', async () => {
+          if (!confirm(`Забыть «${peer.name}»? Отправлять на него больше не получится.`)) return
+          try {
+            await api(`/api/peers/${peer.id}`, { method: 'DELETE' })
+            await refreshPeers()
+          } catch (error) {
+            toast(error.message)
+          }
+        }),
+      )
+    }
+
+    item.append(actions)
+    el.peersList.append(item)
+  }
+
+  renderTransfers()
+}
+
 // --- загрузка данных -----------------------------------------------------
+
+async function refreshPeers() {
+  try {
+    const data = await api('/api/peers')
+    state.peers = data.peers
+    state.transfers = data.transfers
+    state.peerCode = data.code
+    el.peers.hidden = false
+    renderPeers()
+    renderSelection()
+    renderClips()
+  } catch {
+    // с телефона обмен между компьютерами закрыт — блок просто не показываем
+    el.peers.hidden = true
+  }
+}
 
 async function refreshFiles() {
   const data = await api('/api/files')
@@ -387,6 +618,7 @@ async function refreshDevices() {
 async function refreshAll() {
   await Promise.all([refreshFiles(), refreshClips()])
   void refreshDevices()
+  void refreshPeers()
 }
 
 // --- действия над выбранными файлами -------------------------------------
@@ -606,10 +838,13 @@ function disconnect() {
   state.files = []
   state.clips = []
   state.devices = []
+  state.peers = []
+  state.transfers = []
   state.selected.clear()
   renderFiles()
   renderClips()
   el.devices.hidden = true
+  el.peers.hidden = true
   el.connDot.classList.remove('online')
   el.connDot.classList.add('offline')
   openGate()
@@ -747,6 +982,12 @@ function start() {
       if (message.type === 'file:added' || message.type === 'file:removed') void refreshFiles()
       if (message.type === 'clip:added' || message.type === 'clip:removed') void refreshClips()
       if (message.type === 'devices:changed') void refreshDevices()
+      if (message.type === 'peers:changed') void refreshPeers()
+      // Прогресс приходит готовым списком — перерисовываем без похода на сервер.
+      if (message.type === 'peer:progress') {
+        state.transfers = message.payload?.transfers ?? []
+        renderTransfers()
+      }
     },
   })
 }
@@ -812,6 +1053,41 @@ async function sendClip() {
 el.clipSend.addEventListener('click', () => void sendClip())
 el.clipInput.addEventListener('keydown', (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') void sendClip()
+})
+
+el.peerCodeShow.addEventListener('click', async () => {
+  try {
+    await api('/api/peers/code', { method: 'POST' })
+    await refreshPeers()
+  } catch (error) {
+    toast(error.message)
+  }
+})
+el.peerCodeHide.addEventListener('click', async () => {
+  try {
+    await api('/api/peers/code', { method: 'DELETE' })
+    await refreshPeers()
+  } catch (error) {
+    toast(error.message)
+  }
+})
+el.peerAdd.addEventListener('click', async () => {
+  const host = el.peerHost.value.trim()
+  const code = el.peerCodeInput.value.trim()
+  if (!host || !code) {
+    toast('Нужны адрес соседа и код с его экрана')
+    return
+  }
+  el.peerAdd.disabled = true
+  try {
+    if (await pairPeer(host, el.peerPort.value.trim(), code)) {
+      el.peerHost.value = ''
+      el.peerCodeInput.value = ''
+      await refreshPeers()
+    }
+  } finally {
+    el.peerAdd.disabled = false
+  }
 })
 
 el.disconnect.addEventListener('click', disconnect)

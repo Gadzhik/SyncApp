@@ -10,14 +10,19 @@ import { rotateToken, type Config } from './config.js'
 import { DeviceStore } from './devices.js'
 import { EventHub } from './events.js'
 import { connectUrl, isOwnAddress, lanAddresses, primaryAddress } from './network.js'
+import { PairingCode } from './pairing.js'
+import { PeerSender } from './peer-send.js'
+import { PeerStore } from './peer-store.js'
+import { NO_DISCOVERY, startDiscovery, type Discovery } from './peers.js'
 import { archiveRoutes } from './routes/archive.js'
 import { clipsRoutes } from './routes/clips.js'
 import { devicesRoutes } from './routes/devices.js'
 import { filesRoutes } from './routes/files.js'
+import { peersRoutes } from './routes/peers.js'
 import { staticRoutes } from './static.js'
 import { ClipStore } from './store/clips.js'
 import { thumbnailsAvailable } from './thumbs.js'
-import { ensureCertificate } from './tls.js'
+import { ensureCertificate, fingerprintOf } from './tls.js'
 
 /** Период пинга WebSocket. Два пропущенных подряд — соединение считается мёртвым. */
 const HEARTBEAT_MS = 30_000
@@ -27,6 +32,7 @@ export interface App {
   hub: EventHub
   clips: ClipStore
   devices: DeviceStore
+  discovery: Discovery
   config: Config
   close(): Promise<void>
 }
@@ -48,6 +54,23 @@ export async function buildApp(config: Config, hooks: AppHooks = {}): Promise<Ap
   const hub = new EventHub()
   const clips = new ClipStore(config.dataDir, config.maxClips)
   const devices = new DeviceStore(config.dataDir)
+  const peers = new PeerStore(config.dataDir)
+  const pairing = new PairingCode()
+  const sender = new PeerSender(hub, peers)
+
+  // Анонс и поиск соседей — одна и та же многоадресная рассылка, поэтому LANSYNC_MDNS=0
+  // выключает и то и другое: кто её отключил, не хочет её ни в какую сторону.
+  const discovery =
+    config.mdns ?
+      await startDiscovery({
+        selfId: config.peerId,
+        deviceName: config.deviceName,
+        port: config.port,
+        tls: Boolean(https),
+        fingerprint: https ? fingerprintOf(https.cert) : null,
+        onChange: () => hub.broadcast('peers:changed'),
+      })
+    : NO_DISCOVERY
 
   app.addHook('onRequest', async (request, reply) => {
     if (!needsAuth(request.url)) return
@@ -223,6 +246,7 @@ export async function buildApp(config: Config, hooks: AppHooks = {}): Promise<Ap
   await app.register(clipsRoutes, { config, hub, clips })
   await app.register(devicesRoutes, { config, hub, devices })
   await app.register(archiveRoutes, { config })
+  await app.register(peersRoutes, { config, hub, devices, peers, discovery, sender, pairing })
 
   const cleaner: Cleaner = startCleanup(config, hub)
 
@@ -242,10 +266,13 @@ export async function buildApp(config: Config, hooks: AppHooks = {}): Promise<Ap
     hub,
     clips,
     devices,
+    discovery,
     config,
     close: async () => {
       watcher?.stop()
       cleaner.stop()
+      discovery.stop()
+      sender.stop()
       await app.close()
     },
   }

@@ -4,6 +4,10 @@ export type EventType =
   | 'clip:added'
   | 'clip:removed'
   | 'devices:changed'
+  /** Изменился список соседних компьютеров: кто-то появился, пропал или был привязан. */
+  | 'peers:changed'
+  /** Ход отправки файла соседу — страница рисует его так же, как обычную загрузку. */
+  | 'peer:progress'
 
 export interface Subscriber {
   send(message: string): void

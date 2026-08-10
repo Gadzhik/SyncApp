@@ -14,6 +14,12 @@ export interface Config {
   inboxDir: string
   /** Общий секрет: без него запросы из сети отклоняются. */
   token: string
+  /**
+   * Постоянный идентификатор этого компьютера. Нужен, чтобы отличать соседей в сети
+   * и узнавать собственный анонс: адрес и имя для этого не годятся — адрес меняется,
+   * а два экземпляра на одной машине (так проверяется обмен) делят и адрес, и хост.
+   */
+  peerId: string
   /** Имя, под которым ПК показывается в интерфейсе. */
   deviceName: string
   /** Следить за буфером обмена ПК и публиковать изменения как записи. */
@@ -32,28 +38,39 @@ const DEFAULT_PORT = 8420
 
 interface PersistedConfig {
   token: string
+  peerId: string
 }
 
 function newToken(): string {
   return randomBytes(16).toString('base64url')
 }
 
-function writeToken(dataDir: string, token: string): void {
+function write(dataDir: string, persisted: PersistedConfig): void {
   const file = join(dataDir, 'config.json')
-  writeFileSync(file, `${JSON.stringify({ token } satisfies PersistedConfig, null, 2)}\n`, 'utf8')
+  writeFileSync(file, `${JSON.stringify(persisted, null, 2)}\n`, 'utf8')
 }
 
-function loadOrCreateToken(dataDir: string): string {
+/**
+ * Токен и идентификатор машины лежат в одном файле и создаются одинаково: чего нет —
+ * дописываем, не трогая остальное. Смена токена (`rotateToken`) идентификатор сохраняет —
+ * иначе «отключить все устройства» выглядело бы для соседей как появление нового компьютера.
+ */
+function loadOrCreate(dataDir: string): PersistedConfig {
   const file = join(dataDir, 'config.json')
+  let token = ''
+  let peerId = ''
   try {
-    const parsed = JSON.parse(readFileSync(file, 'utf8')) as PersistedConfig
-    if (typeof parsed.token === 'string' && parsed.token.length >= 16) return parsed.token
+    const parsed = JSON.parse(readFileSync(file, 'utf8')) as Partial<PersistedConfig>
+    if (typeof parsed.token === 'string' && parsed.token.length >= 16) token = parsed.token
+    if (typeof parsed.peerId === 'string' && parsed.peerId.length >= 8) peerId = parsed.peerId
   } catch {
     // файла нет или он повреждён — создадим заново
   }
-  const token = newToken()
-  writeToken(dataDir, token)
-  return token
+
+  if (token && peerId) return { token, peerId }
+  const persisted: PersistedConfig = { token: token || newToken(), peerId: peerId || newToken() }
+  write(dataDir, persisted)
+  return persisted
 }
 
 /**
@@ -62,7 +79,7 @@ function loadOrCreateToken(dataDir: string): string {
  */
 export function rotateToken(dataDir: string): string {
   const token = newToken()
-  writeToken(dataDir, token)
+  write(dataDir, { token, peerId: loadOrCreate(dataDir).peerId })
   return token
 }
 
@@ -70,13 +87,15 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
   const dataDir = overrides.dataDir ?? process.env.LANSYNC_DIR ?? join(homedir(), 'LanSync')
   const inboxDir = overrides.inboxDir ?? join(dataDir, 'inbox')
   mkdirSync(inboxDir, { recursive: true })
+  const persisted = loadOrCreate(dataDir)
 
   return {
     port: overrides.port ?? Number(process.env.LANSYNC_PORT ?? DEFAULT_PORT),
     host: overrides.host ?? process.env.LANSYNC_HOST ?? '0.0.0.0',
     dataDir,
     inboxDir,
-    token: overrides.token ?? loadOrCreateToken(dataDir),
+    token: overrides.token ?? persisted.token,
+    peerId: overrides.peerId ?? persisted.peerId,
     deviceName: overrides.deviceName ?? process.env.LANSYNC_NAME ?? hostname(),
     watchClipboard: overrides.watchClipboard ?? process.env.LANSYNC_WATCH_CLIPBOARD === '1',
     maxClips: overrides.maxClips ?? 50,

@@ -1,3 +1,4 @@
+import { X509Certificate } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
@@ -48,6 +49,15 @@ async function generate(names: string[]): Promise<{ key: string; cert: string }>
   })
 
   return { key: pems.private, cert: pems.cert }
+}
+
+/**
+ * Отпечаток сертификата в виде `AB:CD:…`. Центра сертификации здесь нет и быть не может,
+ * поэтому соседний компьютер узнаётся именно по отпечатку: он запоминается при привязке,
+ * как это делает ssh с ключом хоста.
+ */
+export function fingerprintOf(cert: string): string {
+  return new X509Certificate(cert).fingerprint256
 }
 
 /**

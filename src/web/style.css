@@ -326,6 +326,43 @@ h2 {
   flex: 1;
 }
 
+/* Кнопки «отправить выбранное соседу» стоят в одном ряду с остальными действиями выборки */
+.send-to {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.peer-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.peer-form input {
+  flex: 1 1 120px;
+  min-width: 0;
+  font: inherit;
+  padding: 8px 10px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.peer-form input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* Код привязки читают с экрана и набирают руками — поэтому крупно и вразрядку */
+#peer-code {
+  font-size: 22px;
+  letter-spacing: 4px;
+  text-align: center;
+}
+
 .check {
   display: inline-flex;
   align-items: center;

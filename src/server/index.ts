@@ -89,18 +89,6 @@ function probeExisting(port: number, tls: boolean): Promise<boolean> {
   })
 }
 
-async function advertiseMdns(port: number, deviceName: string): Promise<() => void> {
-  try {
-    const { Bonjour } = await import('bonjour-service')
-    const bonjour = new Bonjour()
-    bonjour.publish({ name: `LanSync (${deviceName})`, type: 'http', port })
-    return () => bonjour.destroy()
-  } catch {
-    // mDNS — необязательная приятность; без него работают прямые IP-адреса
-    return () => {}
-  }
-}
-
 /**
  * Сервер на соседнем порту, который только перенаправляет на HTTPS. Нужен для
  * случая, когда адрес набирают руками или открывают старую закладку с http://.
@@ -183,8 +171,8 @@ async function serve(quiet: boolean): Promise<void> {
   const scheme = config.tls ? 'https' : 'http'
   const primary = await primaryAddress()
   const url = connectUrl(primary, config.port, config.token, config.tls)
+  // Анонс и поиск соседей ведёт сам сервер: они завязаны на сертификат и рассылку событий.
   const redirect = config.tls ? startRedirectServer(config.port + 1, config.port) : null
-  const stopMdns = config.mdns ? await advertiseMdns(config.port, config.deviceName) : () => {}
 
   if (!quiet) {
     const addresses = lanAddresses()
@@ -244,7 +232,6 @@ async function serve(quiet: boolean): Promise<void> {
     if (shuttingDown) return
     shuttingDown = true
     if (!quiet) console.log('\n  Останавливаюсь…')
-    stopMdns()
     redirect?.close()
     void app.close().then(() => process.exit(0))
   }

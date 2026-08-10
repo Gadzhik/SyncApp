@@ -57,7 +57,14 @@ export function isLoopback(request: FastifyRequest): boolean {
   return LOOPBACK.has(request.ip)
 }
 
+/**
+ * `/api/peers/adopt` — вторая и последняя дверь без токена: соседний компьютер при первом
+ * знакомстве ещё ничего не знает. Её стережёт временный код привязки, показанный на этой
+ * машине человеком; без активного кода роут отвечает отказом.
+ */
+const OPEN = new Set(['/api/info', '/api/peers/adopt'])
+
 export function needsAuth(url: string): boolean {
   const path = url.split('?')[0] ?? ''
-  return path.startsWith('/api/') && path !== '/api/info'
+  return path.startsWith('/api/') && !OPEN.has(path)
 }

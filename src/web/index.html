@@ -49,6 +49,7 @@
             <span>Выбрать всё</span>
           </label>
           <span id="selection-info" class="muted"></span>
+          <span id="send-to" class="send-to"></span>
           <span class="spacer"></span>
           <button id="download-zip" class="btn btn-sm">Скачать архивом</button>
           <button id="delete-selected" class="btn btn-sm btn-danger" hidden>Удалить выбранные</button>
@@ -84,6 +85,47 @@
         </div>
         <ul id="devices-list" class="list"></ul>
         <p id="devices-empty" class="empty" hidden>Ни одно устройство ещё не подключалось.</p>
+      </section>
+
+      <section id="peers" class="block" hidden>
+        <div class="list-head">
+          <h2>Компьютеры в сети</h2>
+          <span id="peers-count" class="muted"></span>
+        </div>
+
+        <ul id="peer-transfers" class="uploads"></ul>
+        <ul id="peers-list" class="list"></ul>
+        <p id="peers-empty" class="empty" hidden>
+          Соседних компьютеров не видно. Запустите LanSync на втором ПК — или добавьте его
+          по адресу, если в сети закрыта рассылка mDNS.
+        </p>
+
+        <div class="card">
+          <div class="card-title">Принять с другого компьютера</div>
+          <p class="muted">
+            Покажите код и введите его на том компьютере, который будет отправлять. Привязка
+            нужна один раз, код живёт пять минут.
+          </p>
+          <code id="peer-code" class="url" hidden></code>
+          <div class="card-actions">
+            <button id="peer-code-show" class="btn btn-sm">Показать код</button>
+            <button id="peer-code-hide" class="btn btn-sm btn-danger" hidden>Скрыть код</button>
+          </div>
+        </div>
+
+        <details class="card">
+          <summary>Добавить по адресу</summary>
+          <p class="muted">
+            Нужно, если сосед не появился сам: в гостевых и офисных сетях рассылку mDNS часто
+            запрещают. Адрес и код возьмите с экрана того компьютера.
+          </p>
+          <div class="peer-form">
+            <input id="peer-host" type="text" placeholder="192.168.1.50" autocomplete="off" spellcheck="false" />
+            <input id="peer-port" type="text" inputmode="numeric" placeholder="8420" />
+            <input id="peer-code-input" type="text" inputmode="numeric" placeholder="код" autocomplete="off" />
+            <button id="peer-add" class="btn btn-sm btn-primary">Привязать</button>
+          </div>
+        </details>
       </section>
 
       <section id="connect" class="connect" hidden>

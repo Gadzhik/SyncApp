@@ -109,6 +109,13 @@ async function main() {
     (await fetch(`${LAN}/api/autostart`, { headers: { 'X-Sync-Token': shared } })).status === 403,
   )
 
+  check(
+    'обмен между компьютерами закрыт из сети — 403',
+    (await fetch(`${LAN}/api/peers`, { headers: { 'X-Sync-Token': shared } })).status === 403,
+  )
+  const peers = await (await fetch(`${LOCAL}/api/peers`)).json()
+  check('список соседей отдаётся с ПК', Array.isArray(peers.peers), `найдено ${peers.peers?.length ?? 0}`)
+
   // --- привязка устройства ---
   const pair = await (
     await fetch(`${LAN}/api/pair`, {

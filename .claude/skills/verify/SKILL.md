@@ -15,7 +15,7 @@ npx tsc -p tsconfig.json --noEmit
 npm test
 ```
 
-Должно быть 26 проходящих тестов. Если менялся `src/web`, дополнительно:
+Должно быть 30 проходящих тестов. Если менялся `src/web`, дополнительно:
 
 ```bash
 node --check src/web/app.js && node --check src/web/api.js && node --check src/web/sw.js

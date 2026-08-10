@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdtemp, readdir, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
@@ -9,7 +9,7 @@ import { startCleanup } from '../src/server/cleanup.ts'
 import { loadConfig } from '../src/server/config.ts'
 import { EventHub } from '../src/server/events.ts'
 import { lanAddresses } from '../src/server/network.ts'
-import { sanitizeName } from '../src/server/store/files.ts'
+import { listFiles, sanitizeName } from '../src/server/store/files.ts'
 
 const sha256 = (data: Uint8Array): string => createHash('sha256').update(data).digest('hex')
 
@@ -433,6 +433,170 @@ describe('LanSync API', () => {
       headers,
     })
     assert.equal(withToken.statusCode, 200)
+  })
+})
+
+/*
+ * Обмен между компьютерами. Оба конца поднимаются по-настоящему и общаются по сети, потому
+ * что проверять тут нечего иначе: сосед обязан быть «из сети», а запросы с loopback
+ * авторизуются по адресу — через 127.0.0.1 токен не проверялся бы вовсе и отзыв доступа
+ * выглядел бы работающим при любом коде.
+ */
+describe('обмен между компьютерами', () => {
+  let A: App
+  let B: App
+  let dirA: string
+  let dirB: string
+  let lan: string | undefined
+
+  const portA = 8642
+  const portB = 8643
+
+  before(async () => {
+    lan = lanAddresses()[0]?.address
+    if (!lan) return
+
+    dirA = await mkdtemp(join(tmpdir(), 'lansync-a-'))
+    dirB = await mkdtemp(join(tmpdir(), 'lansync-b-'))
+    const common = { host: '0.0.0.0', mdns: false, watchClipboard: false, tls: false } as const
+    A = await buildApp(loadConfig({ ...common, dataDir: dirA, port: portA, deviceName: 'машина-А' }))
+    B = await buildApp(loadConfig({ ...common, dataDir: dirB, port: portB, deviceName: 'машина-Б' }))
+    await A.server.listen({ port: portA, host: '0.0.0.0' })
+    await B.server.listen({ port: portB, host: '0.0.0.0' })
+  })
+
+  after(async () => {
+    await A?.close()
+    await B?.close()
+    if (dirA) await rm(dirA, { recursive: true, force: true })
+    if (dirB) await rm(dirB, { recursive: true, force: true })
+  })
+
+  const body = (response: { payload: string }): Record<string, never> =>
+    JSON.parse(response.payload) as Record<string, never>
+
+  it('привязывается по коду и отправляет файл, а после отвязки теряет доступ', async (t) => {
+    if (!lan) return t.skip('у машины нет сетевого адреса')
+
+    // Б показывает код; без него дверь для непривязанных закрыта
+    const closed = await A.server.inject({
+      method: 'POST',
+      url: '/api/peers/pair',
+      payload: { host: lan, port: portB, tls: false, code: '000000' },
+    })
+    assert.equal(closed.statusCode, 403)
+
+    const code = String(body(await B.server.inject({ method: 'POST', url: '/api/peers/code' }))['code'])
+    assert.match(code, /^\d{6}$/)
+
+    // Неверный код не проходит, верный — привязывает
+    const wrong = await A.server.inject({
+      method: 'POST',
+      url: '/api/peers/pair',
+      payload: { host: lan, port: portB, tls: false, code: '111111' },
+    })
+    assert.equal(wrong.statusCode, 403)
+
+    const paired = await A.server.inject({
+      method: 'POST',
+      url: '/api/peers/pair',
+      payload: { host: lan, port: portB, tls: false, code },
+    })
+    assert.equal(paired.statusCode, 200)
+    const peer = body(paired)['peer'] as unknown as { id: string; name: string }
+    assert.equal(peer.name, 'машина-Б')
+    assert.equal(peer.id, B.config.peerId)
+
+    // Сосед виден у Б как обычное устройство — и отвязывается там же, где телефоны
+    const devices = body(await B.server.inject({ url: '/api/devices' }))['devices'] as unknown as {
+      id: string
+      name: string
+    }[]
+    assert.equal(devices.length, 1)
+    assert.match(devices[0]!.name, /машина-А/)
+
+    // Код одноразовый
+    const reused = await A.server.inject({
+      method: 'POST',
+      url: '/api/peers/pair',
+      payload: { host: lan, port: portB, tls: false, code },
+    })
+    assert.equal(reused.statusCode, 403)
+
+    // Отправка файла: у Б он появляется целиком и с тем же именем
+    const payload = randomBytes(512 * 1024)
+    await writeFile(join(A.config.inboxDir, 'передача ✨.bin'), payload)
+    const entry = (await listFiles(A.config.inboxDir))[0]!
+    const sent = await A.server.inject({
+      method: 'POST',
+      url: `/api/peers/${peer.id}/send`,
+      payload: { ids: [entry.id] },
+    })
+    assert.equal(sent.statusCode, 200)
+
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const transfers = body(await A.server.inject({ url: '/api/peers' }))['transfers'] as unknown as {
+        status: string
+        error?: string
+      }[]
+      if (transfers[0]?.status === 'done') break
+      assert.notEqual(transfers[0]?.status, 'error', transfers[0]?.error)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+
+    const received = await listFiles(B.config.inboxDir)
+    assert.equal(received.length, 1)
+    assert.equal(received[0]!.name, 'передача ✨.bin')
+    assert.equal(sha256(await readFile(received[0]!.path)), sha256(payload))
+
+    // Текст уходит тем же путём, что и от браузера
+    const clip = await A.server.inject({
+      method: 'POST',
+      url: `/api/peers/${peer.id}/clip`,
+      payload: { text: 'привет соседу' },
+    })
+    assert.equal(clip.statusCode, 200)
+    const clips = body(await B.server.inject({ url: '/api/clips' }))['clips'] as unknown as { text: string }[]
+    assert.equal(clips[0]?.text, 'привет соседу')
+
+    // Отвязка на стороне Б закрывает доступ немедленно
+    await B.server.inject({ method: 'DELETE', url: `/api/devices/${devices[0]!.id}` })
+    const rejected = await A.server.inject({
+      method: 'POST',
+      url: `/api/peers/${peer.id}/clip`,
+      payload: { text: 'после отвязки' },
+    })
+    assert.equal(rejected.statusCode, 502)
+    assert.equal((body(await B.server.inject({ url: '/api/clips' }))['clips'] as unknown as unknown[]).length, 1)
+  })
+
+  it('управление соседями закрыто для устройств из сети', async (t) => {
+    if (!lan) return t.skip('у машины нет сетевого адреса')
+
+    const shared = A.config.token
+    const remote = { remoteAddress: '192.168.1.50', headers: { 'X-Sync-Token': shared } }
+    for (const [method, url] of [
+      ['GET', '/api/peers'],
+      ['POST', '/api/peers/code'],
+      ['POST', '/api/peers/pair'],
+    ] as const) {
+      const response = await A.server.inject({ method, url, ...remote, payload: {} })
+      assert.equal(response.statusCode, 403, `${method} ${url}`)
+    }
+  })
+
+  it('без показанного кода привязаться нельзя даже с верным адресом', async (t) => {
+    if (!lan) return t.skip('у машины нет сетевого адреса')
+
+    B.server.inject({ method: 'DELETE', url: '/api/peers/code' })
+    const response = await A.server.inject({
+      method: 'POST',
+      url: '/api/peers/adopt',
+      remoteAddress: '192.168.1.50',
+      payload: { code: '123456', id: 'кто-то', name: 'чужак' },
+    })
+    assert.equal(response.statusCode, 403)
+    assert.equal(body(response)['error'], 'привязка не запрошена')
   })
 })
 
