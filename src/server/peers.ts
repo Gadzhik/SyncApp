@@ -11,6 +11,8 @@
  * лишь избавляет от этого в обычном случае.
  */
 
+import { isLinkLocal } from './network.js'
+
 /** Тип службы. Собственный, а не `http`: искать нужно именно LanSync, а не всё подряд. */
 export const SERVICE_TYPE = 'lansync'
 
@@ -48,14 +50,22 @@ export const NO_DISCOVERY: Discovery = {
   stop: () => {},
 }
 
-/** Адрес, по которому до соседа реально достучаться: IPv4 без APIPA. */
-function pickAddress(addresses: string[] | undefined): string | null {
+/**
+ * Адрес, по которому до соседа реально достучаться: IPv4, обычный в приоритете.
+ * Link-local (169.254.*) берём, только если другого не объявлено: в сети без DHCP —
+ * прямой кабель, чужая точка доступа — он единственный, что есть у обеих сторон.
+ */
+export function pickPeerAddress(addresses: string[] | undefined): string | null {
+  let linkLocal: string | null = null
   for (const address of addresses ?? []) {
     if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(address)) continue
-    if (address.startsWith('169.254.')) continue
+    if (isLinkLocal(address)) {
+      linkLocal ??= address
+      continue
+    }
     return address
   }
-  return null
+  return linkLocal
 }
 
 /** Значения TXT-записи приходят строками или буферами — приводим к строке. */
@@ -93,7 +103,7 @@ export async function startDiscovery(options: DiscoveryOptions): Promise<Discove
       const id = txtValue(service.txt, 'id')
       // Чужие службы того же типа без нашей TXT-записи и собственный анонс пропускаем.
       if (!id || id === options.selfId) return
-      const host = pickAddress(service.addresses)
+      const host = pickPeerAddress(service.addresses)
       if (!host) return
 
       found.set(id, {

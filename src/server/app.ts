@@ -27,6 +27,8 @@ import { ensureCertificate, fingerprintOf } from './tls.js'
 /** Период пинга WebSocket. Два пропущенных подряд — соединение считается мёртвым. */
 const HEARTBEAT_MS = 30_000
 
+const QR_OPTIONS = { type: 'svg', margin: 1, width: 240 } as const
+
 export interface App {
   server: FastifyInstance
   hub: EventHub
@@ -141,12 +143,23 @@ export async function buildApp(config: Config, hooks: AppHooks = {}): Promise<Ap
   /** Панель подключения телефона показывается только на самом ПК — токен наружу не уходит. */
   app.get('/api/connect', async (request, reply) => {
     if (!isLoopback(request)) return reply.code(403).send({ error: 'доступно только с этого компьютера' })
-    const url = connectUrl(await primaryAddress(), config.port, config.token, Boolean(https))
-    const qr = await QRCode.toString(url, { type: 'svg', margin: 1, width: 240 })
+    /*
+     * QR готовится на каждый адрес машины, а не только на лучший по эвристике. Угадать
+     * нельзя: если компьютер раздаёт точку доступа и сам подключён к другой сети, таблица
+     * маршрутизации укажет на вторую, а телефон сидит в первой. Выбор оставляем человеку.
+     */
+    const primary = await primaryAddress()
+    const all = [primary, ...lanAddresses().map((entry) => entry.address)]
+    const addresses = await Promise.all(
+      [...new Set(all)].map(async (address) => {
+        const link = connectUrl(address, config.port, config.token, Boolean(https))
+        return { address, url: link, qr: await QRCode.toString(link, QR_OPTIONS) }
+      }),
+    )
     return {
-      url,
-      qr,
-      addresses: lanAddresses().map((entry) => entry.address),
+      url: addresses[0]?.url ?? '',
+      qr: addresses[0]?.qr ?? '',
+      addresses,
       port: config.port,
       token: config.token,
       secure: Boolean(https),

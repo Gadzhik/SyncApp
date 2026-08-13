@@ -54,6 +54,8 @@ const el = {
   connect: $('#connect'),
   connectQr: $('#connect-qr'),
   connectUrl: $('#connect-url'),
+  connectAddresses: $('#connect-addresses'),
+  connectHint: $('#connect-hint'),
   certNote: $('#cert-note'),
   cleanupNote: $('#cleanup-note'),
   rotateToken: $('#rotate-token'),
@@ -177,6 +179,8 @@ const state = {
   transfers: [],
   /** Свой код привязки, пока он показан. */
   peerCode: null,
+  /** Адреса этого компьютера с готовыми QR — по одному на сеть. */
+  connect: [],
 }
 
 /** Соседи, которым можно отправлять: привязанные и с неизменившимся сертификатом. */
@@ -882,11 +886,32 @@ async function pairDevice() {
 
 // --- панель подключения (видна только на самом ПК) -----------------------
 
+/**
+ * Показывает QR выбранного адреса. Адресов у компьютера бывает несколько — проводная сеть,
+ * Wi-Fi, своя точка доступа, — и телефон достучится только по адресу той сети, в которой
+ * находится сам. Угадать её за человека нельзя, поэтому предлагаем переключатель.
+ */
+function showAddress(address) {
+  const chosen = state.connect.find((entry) => entry.address === address) ?? state.connect[0]
+  if (!chosen) return
+  el.connectQr.innerHTML = chosen.qr
+  el.connectUrl.textContent = chosen.url
+
+  el.connectAddresses.replaceChildren()
+  for (const entry of state.connect) {
+    const node = button(entry.address, entry === chosen ? 'btn-primary' : '', () => showAddress(entry.address))
+    node.disabled = entry === chosen
+    el.connectAddresses.append(node)
+  }
+  el.connectAddresses.hidden = state.connect.length < 2
+  el.connectHint.hidden = state.connect.length < 2
+}
+
 async function loadConnectPanel() {
   try {
     const data = await api('/api/connect')
-    el.connectQr.innerHTML = data.qr
-    el.connectUrl.textContent = data.url
+    state.connect = data.addresses ?? []
+    showAddress(state.connect[0]?.address)
     el.certNote.hidden = !data.secure
     el.cleanupNote.textContent =
       state.info.keepDays > 0 ?

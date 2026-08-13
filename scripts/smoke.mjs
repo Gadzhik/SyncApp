@@ -53,15 +53,17 @@ function routedAddress() {
   })
 }
 
+/** Как и сервер: обычный адрес в приоритете, link-local — только если других нет. */
 function fallbackAddress() {
+  let linkLocal = null
   for (const addresses of Object.values(networkInterfaces())) {
     for (const addr of addresses ?? []) {
-      if (addr.family === 'IPv4' && !addr.internal && !addr.address.startsWith('169.254.')) {
-        return addr.address
-      }
+      if (addr.family !== 'IPv4' || addr.internal) continue
+      if (addr.address.startsWith('169.254.')) linkLocal ??= addr.address
+      else return addr.address
     }
   }
-  return null
+  return linkLocal
 }
 
 async function detectScheme(host) {
@@ -96,7 +98,14 @@ async function main() {
   const info = await (await fetch(`${LOCAL}/api/info`)).json()
   check('сервер отвечает', Boolean(info.deviceName), `${info.deviceName}, версия ${info.version}`)
 
-  const shared = (await (await fetch(`${LOCAL}/api/connect`)).json()).token
+  const connect = await (await fetch(`${LOCAL}/api/connect`)).json()
+  const shared = connect.token
+  check(
+    'QR готов на каждый адрес машины',
+    connect.addresses.length > 0 &&
+      connect.addresses.every((entry) => entry.qr?.startsWith('<svg') && entry.url.includes(entry.address)),
+    `адресов ${connect.addresses.length}`,
+  )
 
   // --- доступ ---
   check('без токена из сети — 401', (await fetch(`${LAN}/api/files`)).status === 401)

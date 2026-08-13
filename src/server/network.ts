@@ -13,34 +13,63 @@ export interface LanAddress {
  */
 const VIRTUAL = /vethernet|virtualbox|vmware|hyper-?v|docker|loopback|tailscale|zerotier|tap-|tun\d|npcap/i
 
+/**
+ * Адрес, который система назначила себе сама, не дождавшись DHCP (APIPA, link-local).
+ * Ровно такие получают два компьютера, соединённые кабелем или своей точкой доступа,
+ * когда роутера в сети нет.
+ */
+export const isLinkLocal = (address: string): boolean => address.startsWith('169.254.')
+
 function rank({ address, iface }: LanAddress): number {
   if (VIRTUAL.test(iface)) return 10
+  if (isLinkLocal(address)) return 9
   if (address.startsWith('192.168.')) return 0
   if (address.startsWith('10.')) return 1
   if (/^172\.(1[6-9]|2\d|3[01])\./.test(address)) return 2
   return 3
 }
 
+/** Часть `networkInterfaces()`, которая нужна для выбора адреса. */
+export interface RawAddress {
+  address: string
+  family: string
+  internal: boolean
+}
+
 /**
- * Внешние IPv4-адреса машины. Отсеиваем loopback и APIPA (169.254.*) — они
- * бесполезны для телефона.
+ * Отбор адресов из списка интерфейсов. Вынесен отдельно от `lanAddresses`, потому что
+ * настоящие интерфейсы машины в тестах не подставишь.
+ *
+ * Link-local держим про запас: пока есть хоть один настоящий адрес, они только засоряют
+ * список и заставляют перевыпускать сертификат при каждом воткнутом кабеле. Но если
+ * настоящих нет — а без роутера их и не будет, — то это единственный способ дозвониться.
+ * «Настоящим» считается адрес не на виртуальном адаптере: на машине с WSL и Hyper-V их
+ * набор непуст всегда, а толку от них ноль.
  */
-export function lanAddresses(): LanAddress[] {
+export function selectLanAddresses(interfaces: Record<string, RawAddress[] | undefined>): LanAddress[] {
   const found: LanAddress[] = []
-  for (const [iface, addresses] of Object.entries(networkInterfaces())) {
+  const linkLocal: LanAddress[] = []
+  for (const [iface, addresses] of Object.entries(interfaces)) {
     for (const addr of addresses ?? []) {
       if (addr.family !== 'IPv4' || addr.internal) continue
-      if (addr.address.startsWith('169.254.')) continue
-      found.push({ address: addr.address, iface })
+      ;(isLinkLocal(addr.address) ? linkLocal : found).push({ address: addr.address, iface })
     }
   }
-  return found.sort((a, b) => rank(a) - rank(b) || a.address.localeCompare(b.address))
+  const usable = found.some((entry) => !VIRTUAL.test(entry.iface))
+  const list = usable ? found : [...found, ...linkLocal]
+  return list.sort((a, b) => rank(a) - rank(b) || a.address.localeCompare(b.address))
+}
+
+/** Внешние IPv4-адреса машины: без loopback, лучшие для телефона — первыми. */
+export function lanAddresses(): LanAddress[] {
+  return selectLanAddresses(networkInterfaces())
 }
 
 /**
  * Адрес принадлежит одному из интерфейсов самой машины. Берём их напрямую, а не через
- * `lanAddresses`: там адреса отобраны для телефона (без виртуальных адаптеров и APIPA),
- * а здесь важен любой адрес, с которого может прийти запрос с этого же компьютера.
+ * `lanAddresses`: там адреса отобраны для телефона (виртуальные адаптеры в хвосте,
+ * link-local только при отсутствии других), а здесь важен любой адрес, с которого может
+ * прийти запрос с этого же компьютера.
  */
 export function isOwnAddress(ip: string): boolean {
   // IPv4 в IPv6-обёртке (::ffff:10.0.0.5) и ссылочный адрес с зоной (fe80::1%wlan0)

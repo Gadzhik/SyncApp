@@ -8,7 +8,8 @@ import { buildApp, type App } from '../src/server/app.ts'
 import { startCleanup } from '../src/server/cleanup.ts'
 import { loadConfig } from '../src/server/config.ts'
 import { EventHub } from '../src/server/events.ts'
-import { lanAddresses } from '../src/server/network.ts'
+import { lanAddresses, selectLanAddresses } from '../src/server/network.ts'
+import { pickPeerAddress } from '../src/server/peers.ts'
 import { listFiles, sanitizeName } from '../src/server/store/files.ts'
 
 const sha256 = (data: Uint8Array): string => createHash('sha256').update(data).digest('hex')
@@ -171,6 +172,23 @@ describe('LanSync API', () => {
       remoteAddress: '192.168.1.50',
     })
     assert.equal(response.statusCode, 403)
+  })
+
+  it('готовит QR на каждый адрес компьютера', async () => {
+    const data = (await (await fetch(`${base}/api/connect`)).json()) as {
+      url: string
+      qr: string
+      addresses: { address: string; url: string; qr: string }[]
+    }
+    assert.ok(data.addresses.length > 0, 'хотя бы один адрес есть всегда')
+    assert.equal(data.addresses[0]?.url, data.url, 'первым идёт тот же адрес, что в url')
+    assert.equal(data.addresses[0]?.qr, data.qr)
+    for (const entry of data.addresses) {
+      assert.ok(entry.qr.startsWith('<svg'), `QR для ${entry.address}`)
+      assert.ok(entry.url.includes(entry.address), `ссылка ведёт на ${entry.address}`)
+    }
+    const unique = new Set(data.addresses.map((entry) => entry.address))
+    assert.equal(unique.size, data.addresses.length, 'адреса не повторяются')
   })
 
   it('сообщает, что именно принято, когда пачка не влезла целиком', async () => {
@@ -668,6 +686,64 @@ describe('автоочистка', () => {
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('выбор адреса без DHCP', () => {
+  const ipv4 = (address: string) => ({ address, family: 'IPv4', internal: false })
+
+  it('обычный адрес вытесняет link-local', () => {
+    const list = selectLanAddresses({ wlan0: [ipv4('192.168.1.42')], eth0: [ipv4('169.254.10.5')] })
+    assert.deepEqual(
+      list.map((entry) => entry.address),
+      ['192.168.1.42'],
+    )
+  })
+
+  it('без DHCP остаётся link-local — иначе подключаться не по чему', () => {
+    const list = selectLanAddresses({ eth0: [ipv4('169.254.10.5')] })
+    assert.deepEqual(
+      list.map((entry) => entry.address),
+      ['169.254.10.5'],
+    )
+  })
+
+  it('адрес виртуального адаптера не отменяет link-local', () => {
+    // На машине с WSL и Hyper-V их подсети есть всегда, но ни телефон, ни сосед в них не живут.
+    const list = selectLanAddresses({
+      'vEthernet (WSL)': [ipv4('172.20.0.1')],
+      eth0: [ipv4('169.254.10.5')],
+    })
+    assert.deepEqual(
+      list.map((entry) => entry.address),
+      ['169.254.10.5', '172.20.0.1'],
+    )
+  })
+
+  it('loopback и IPv6 в список не попадают', () => {
+    const list = selectLanAddresses({
+      lo: [{ address: '127.0.0.1', family: 'IPv4', internal: true }],
+      wlan0: [{ address: 'fe80::1', family: 'IPv6', internal: false }, ipv4('10.0.0.7')],
+    })
+    assert.deepEqual(
+      list.map((entry) => entry.address),
+      ['10.0.0.7'],
+    )
+  })
+})
+
+describe('адрес соседа из анонса mDNS', () => {
+  it('предпочитает маршрутизируемый адрес', () => {
+    assert.equal(pickPeerAddress(['169.254.3.3', '192.168.1.7']), '192.168.1.7')
+  })
+
+  it('принимает link-local, если другого не объявлено', () => {
+    assert.equal(pickPeerAddress(['fe80::1', '169.254.3.3']), '169.254.3.3')
+  })
+
+  it('без пригодного адреса — null', () => {
+    assert.equal(pickPeerAddress(undefined), null)
+    assert.equal(pickPeerAddress(['fe80::1']), null)
   })
 })
 

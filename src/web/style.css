@@ -508,6 +508,19 @@ textarea:focus,
   overflow-wrap: anywhere;
 }
 
+/* Переключатель адреса: нужен, когда у компьютера несколько сетей. */
+.addresses {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.addresses .btn:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
 /* --- всплывающее уведомление --- */
 .toast {
   position: fixed;
